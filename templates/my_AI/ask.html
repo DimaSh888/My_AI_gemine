@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block title %}Ask to ChatGemini{% endblock %}
+
+{% block content %}
+<section class="panel wide-panel">
+    {% if messages %}
+    <section class="chat-history" id="chat-history">
+        {% for message in messages %}
+            <article class="chat-message">
+                <h3>You:</h3>
+                <div class="answer">
+                    {{ message.prompt|linebreaksbr }}
+                </div>
+
+                <h3>ChatGemini:</h3>
+                <div class="answer">
+                    {{ message.answer|linebreaksbr }}
+                </div>
+            </article>
+        {% endfor %}
+    </section>
+    {% endif %}
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <h1>Ask ChatGemini</h1>
+    <form method="post" class="form-stack">
+        {% csrf_token %}
+        <label for="prompt">Text of ask</label>
+        <textarea id="prompt" name="prompt" placeholder="Напиши запрос..." rows="5" required></textarea>
+        <button class="button" type="submit">Send</button>
+    </form>
+</section>
+
+{% endblock %}
