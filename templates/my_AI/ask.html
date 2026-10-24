@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+
+{% block title %}Ask to ChatGemini{% endblock %}
+
+{% block content %}
+<section class="panel wide-panel">
+    <h1>Ask ChatGemini</h1>
+    <form method="post" class="form-stack">
+        {% csrf_token %}
+        <label for="prompt">Text of ask</label>
+        <textarea id="prompt" name="prompt" placeholder="Напиши запрос..." rows="5" required></textarea>
+        <button class="button" type="submit">Отправить</button>
+    </form>
+    {% if answer %}
+        <h2>Answer ChatGemini</h2>
+        <div class="answer">{{ answer|linebreaksbr }}</div>
+    {% endif %}
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+</section>
+{% endblock %}
