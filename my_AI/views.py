@@ -1,13 +1,13 @@
+from .models import ChatMessage
+from dotenv import load_dotenv
+import os
+from .forms import RegisterForm
+from google.genai import types
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.shortcuts import redirect, render, get_object_or_404
 from django.views.generic import TemplateView
 from google import genai
-from google.genai import types
-from .forms import RegisterForm
-import os
-from dotenv import load_dotenv
-from .models import ChatMessage
 
 load_dotenv()
 
