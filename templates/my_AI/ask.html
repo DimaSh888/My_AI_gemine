@@ -1,34 +1,134 @@
 {% extends 'base.html' %}
 
-{% block title %}Ask to ChatGemini{% endblock %}
+{% block title %}{{ active_chat.title }} — ChatGemini{% endblock %}
+{% block main_class %}app-main{% endblock %}
 
 {% block content %}
-<section class="panel wide-panel">
-    {% if messages %}
-    <section class="chat-history" id="chat-history">
-        {% for message in messages %}
-            <article class="chat-message">
-                <h3>You:</h3>
-                <div class="answer">
-                    {{ message.prompt|linebreaksbr }}
-                </div>
+<div class="chat-layout">
+    <aside class="sidebar">
+        <div class="sidebar-top">
+            <a class="sidebar-brand" href="{% url 'ask' %}">
+                <span class="brand-mark" aria-hidden="true">✦</span>
+                <span>Chat<span class="brand-accent">Gemini</span></span>
+            </a>
+            <form method="post" action="{% url 'new_chat' %}">
+                {% csrf_token %}
+                <button class="new-chat-button" type="submit">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                    <span>Новый чат</span>
+                    <kbd>Ctrl K</kbd>
+                </button>
+            </form>
+        </div>
 
-                <h3>ChatGemini:</h3>
-                <div class="answer">
-                    {{ message.answer|linebreaksbr }}
+        <div class="sidebar-section-title">Недавние</div>
+        <nav class="chat-list" aria-label="История чатов">
+            {% for item in chats %}
+                <div class="chat-list-item {% if item.id == active_chat.id %}active{% endif %}">
+                    <a href="{% url 'chat_detail' item.id %}" title="{{ item.title }}">
+                        <svg class="chat-list-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H5l1.8-3.2A7.5 7.5 0 1 1 20 11.5Z"/></svg>
+                        <span class="chat-list-title">{{ item.title|truncatechars:30 }}</span>
+                    </a>
+                    <form method="post" action="{% url 'delete_chat' item.id %}"
+                          onsubmit="return confirm('Удалить этот чат вместе со всеми сообщениями?');">
+                        {% csrf_token %}
+                        <button class="delete-chat-button" type="submit" title="Удалить чат" aria-label="Удалить чат">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+                        </button>
+                    </form>
                 </div>
-            </article>
-        {% endfor %}
+            {% empty %}
+                <p class="empty-sidebar">Здесь пока нет чатов</p>
+            {% endfor %}
+        </nav>
+
+        <div class="sidebar-bottom">
+            <div class="user-avatar">{{ user.username|first|upper }}</div>
+            <div class="sidebar-user-info">
+                <strong>{{ user.username }}</strong>
+                <span>Личный аккаунт</span>
+            </div>
+            <span class="online-dot" title="Аккаунт активен"></span>
+        </div>
+    </aside>
+
+    <section class="chat-main">
+        <div class="chat-heading">
+            <div class="chat-heading-title">
+                <span class="heading-overline">ТЕКУЩИЙ ДИАЛОГ</span>
+                <span class="active-chat-title">{{ active_chat.title|truncatechars:45 }}</span>
+            </div>
+            <div class="model-pill"><span class="model-status-dot"></span> Gemini</div>
+        </div>
+
+        <div class="conversation" id="conversation">
+            {% if messages %}
+                {% for message in messages %}
+                    <article class="message-row user-row">
+                        <div class="message-avatar user-avatar">{{ user.username|first|upper }}</div>
+                        <div class="message-content">
+                            <div class="message-author">Вы</div>
+                            <div class="message-text user-message-text">{{ message.prompt|linebreaksbr }}</div>
+                        </div>
+                    </article>
+                    <article class="message-row assistant-row">
+                        <div class="message-avatar ai-avatar">✦</div>
+                        <div class="message-content">
+                            <div class="message-author">Gemini <span class="assistant-tag">AI</span></div>
+                            <div class="message-text">{{ message.answer|linebreaksbr }}</div>
+                        </div>
+                    </article>
+                {% endfor %}
+            {% else %}
+                <div class="welcome">
+                    <div class="welcome-mark">✦</div>
+                    <span class="welcome-eyebrow">ВАШ AI-ПОМОЩНИК</span>
+                    <h1>О чём поговорим?</h1>
+                    <p>Задайте вопрос, поделитесь идеей или начните новую задачу.</p>
+                    <div class="welcome-suggestions" aria-hidden="true">
+                        <div><span>✧</span> Объяснить сложную тему</div>
+                        <div><span>⌘</span> Помочь с кодом</div>
+                        <div><span>↗</span> Придумать новую идею</div>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+
+        {% if error %}<div class="error chat-error">{{ error }}</div>{% endif %}
+
+        <div class="composer-wrap">
+            <form method="post" class="composer">
+                {% csrf_token %}
+                <textarea id="prompt" name="prompt" rows="1" placeholder="Напишите сообщение Gemini..." required></textarea>
+                <button type="submit" class="send-button" aria-label="Отправить сообщение" title="Отправить">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>
+                </button>
+            </form>
+            <p class="composer-hint">Gemini может допускать ошибки. Проверяйте важную информацию.</p>
+        </div>
     </section>
-    {% endif %}
-    {% if error %}<p class="error">{{ error }}</p>{% endif %}
-    <h1>Ask ChatGemini</h1>
-    <form method="post" class="form-stack">
-        {% csrf_token %}
-        <label for="prompt">Text of ask</label>
-        <textarea id="prompt" name="prompt" placeholder="Напиши запрос..." rows="5" required></textarea>
-        <button class="button" type="submit">Send</button>
-    </form>
-</section>
+</div>
+<script>
+    const conversation = document.getElementById("conversation");
+    if (conversation) conversation.scrollTop = conversation.scrollHeight;
 
+    const promptBox = document.getElementById("prompt");
+    if (promptBox) {
+        promptBox.addEventListener("input", function () {
+            this.style.height = "auto";
+            this.style.height = Math.min(this.scrollHeight, 180) + "px";
+        });
+        promptBox.addEventListener("keydown", function (event) {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+                event.preventDefault();
+                const newChatForm = document.querySelector(".sidebar-top form");
+                if (newChatForm) newChatForm.requestSubmit();
+            }
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                this.form.requestSubmit();
+            }
+        });
+    }
+</script>
 {% endblock %}
