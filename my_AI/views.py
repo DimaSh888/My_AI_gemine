@@ -5,6 +5,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import redirect, render, get_object_or_404
+from django.http import JsonResponse
 from django.utils import timezone
 from google.genai import types
 from google import genai
@@ -62,55 +63,6 @@ def gemini_view(request, chat_id=None):
     chat = get_object_or_404(chats, id=chat_id)
     error = None
 
-    if request.method == "POST":
-        prompt = request.POST.get("prompt", "").strip()
-        if prompt:
-            try:
-                history = ChatMessage.objects.filter(
-                    chat=chat, user=request.user
-                ).order_by("created_at", "id")
-
-                contents = []
-                for message in history:
-                    contents.append(types.Content(
-                        role="user",
-                        parts=[types.Part.from_text(text=message.prompt)]
-                    ))
-                    contents.append(types.Content(
-                        role="model",
-                        parts=[types.Part.from_text(text=message.answer)]
-                    ))
-
-                contents.append(types.Content(
-                    role="user",
-                    parts=[types.Part.from_text(text=prompt)]
-                ))
-
-                response = client.models.generate_content(
-                    model="gemini-3.1-flash-lite",
-                    contents=contents
-                )
-                answer = response.text
-
-                if answer:
-                    with transaction.atomic():
-                        ChatMessage.objects.create(
-                            chat=chat,
-                            user=request.user,
-                            prompt=prompt,
-                            answer=answer
-                        )
-                        if chat.title == "Новый чат":
-                            chat.title = prompt[:45].strip()
-                            if len(prompt) > 45:
-                                chat.title += "…"
-                        chat.updated_at = timezone.now()
-                        chat.save(update_fields=["title", "updated_at"])
-                    return redirect("chat_detail", chat_id=chat.id)
-                error = "Gemini вернул пустой ответ."
-            except Exception as e:
-                error = f"Ошибка Gemini: {e}"
-
     messages = ChatMessage.objects.filter(
         chat=chat, user=request.user
     ).order_by("created_at", "id")
@@ -121,6 +73,62 @@ def gemini_view(request, chat_id=None):
         "messages": messages,
         "error": error,
     })
+
+
+@login_required
+def send_message(request, chat_id):
+    if request.method != "POST":
+        return JsonResponse({"error": "Метод не поддерживается."}, status=405)
+
+    chat = get_object_or_404(Chat, id=chat_id, user=request.user)
+    prompt = request.POST.get("prompt", "").strip()
+
+    try:
+        history = ChatMessage.objects.filter(
+            chat=chat, user=request.user
+        ).order_by("created_at", "id")
+
+        contents = []
+        for message in history:
+            contents.append(types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=message.prompt)]
+            ))
+            contents.append(types.Content(
+                role="model",
+                parts=[types.Part.from_text(text=message.answer)]
+            ))
+
+        contents.append(types.Content(
+            role="user",
+            parts=[types.Part.from_text(text=prompt)]
+        ))
+
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            contents=contents
+        )
+        answer = response.text
+        if not answer:
+            return JsonResponse({"error": "Gemini вернул пустой ответ."}, status=502)
+
+        with transaction.atomic():
+            ChatMessage.objects.create(
+                chat=chat,
+                user=request.user,
+                prompt=prompt,
+                answer=answer
+            )
+            if chat.title == "Новый чат":
+                chat.title = prompt[:45].strip()
+                if len(prompt) > 45:
+                    chat.title += "…"
+            chat.updated_at = timezone.now()
+            chat.save(update_fields=["title", "updated_at"])
+
+        return JsonResponse({"answer": answer, "chat_title": chat.title})
+    except Exception as exc:
+        return JsonResponse({"error": f"Ошибка Gemini: {exc}"}, status=502)
 
 
 @login_required

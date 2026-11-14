@@ -70,6 +70,11 @@
                             <div class="message-author">Вы</div>
                             <div class="message-text user-message-text">{{ message.prompt|linebreaksbr }}</div>
                         </div>
+                        <form method="post" action="{% url 'ask_delete' message.id %}"
+                              onsubmit="return confirm('Удалить это сообщение и ответ Gemini?');">
+                            {% csrf_token %}
+                            <button class="delete-message-button" type="submit" title="Удалить сообщение" aria-label="Удалить сообщение">×</button>
+                        </form>
                     </article>
                     <article class="message-row assistant-row">
                         <div class="message-avatar ai-avatar">✦</div>
@@ -94,10 +99,11 @@
             {% endif %}
         </div>
 
-        {% if error %}<div class="error chat-error">{{ error }}</div>{% endif %}
+        <div class="error chat-error" id="chat-error" role="alert" hidden></div>
 
         <div class="composer-wrap">
-            <form method="post" class="composer">
+            <form method="post" class="composer" id="composer"
+                  data-send-url="{% url 'send_message' active_chat.id %}">
                 {% csrf_token %}
                 <textarea id="prompt" name="prompt" rows="1" placeholder="Напишите сообщение Gemini..." required></textarea>
                 <button type="submit" class="send-button" aria-label="Отправить сообщение" title="Отправить">
@@ -110,9 +116,46 @@
 </div>
 <script>
     const conversation = document.getElementById("conversation");
-    if (conversation) conversation.scrollTop = conversation.scrollHeight;
-
     const promptBox = document.getElementById("prompt");
+    const composer = document.getElementById("composer");
+    const sendButton = composer.querySelector(".send-button");
+    const errorBox = document.getElementById("chat-error");
+
+    function scrollConversation() {
+        conversation.scrollTop = conversation.scrollHeight;
+    }
+    scrollConversation();
+
+    function addMessageRow(kind, text) {
+        const row = document.createElement("article");
+        row.className = `message-row ${kind}-row`;
+
+        const avatar = document.createElement("div");
+        avatar.className = `message-avatar ${kind === "user" ? "user-avatar" : "ai-avatar"}`;
+        avatar.textContent = kind === "user" ? "{{ user.username|first|upper|escapejs }}" : "✦";
+
+        const content = document.createElement("div");
+        content.className = "message-content";
+        const author = document.createElement("div");
+        author.className = "message-author";
+        author.textContent = kind === "user" ? "Вы" : "Gemini";
+        const body = document.createElement("div");
+        body.className = `message-text ${kind === "user" ? "user-message-text" : ""}`;
+        body.textContent = text;
+        content.append(author, body);
+        row.append(avatar, content);
+        conversation.appendChild(row);
+        scrollConversation();
+        return { row, body };
+    }
+
+    function addLoadingRow() {
+        const result = addMessageRow("assistant", "");
+        result.row.classList.add("loading-row");
+        result.body.innerHTML = '<span class="typing-indicator" aria-label="Gemini печатает"><i></i><i></i><i></i></span><span class="typing-label">Gemini формирует ответ…</span>';
+        return result;
+    }
+
     if (promptBox) {
         promptBox.addEventListener("input", function () {
             this.style.height = "auto";
@@ -126,9 +169,55 @@
             }
             if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
-                this.form.requestSubmit();
+                composer.requestSubmit();
             }
         });
     }
+
+    composer.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const prompt = promptBox.value.trim();
+        if (!prompt || sendButton.disabled) return;
+
+        const formData = new FormData(composer);
+        formData.set("prompt", prompt);
+
+        promptBox.value = "";
+        promptBox.style.height = "auto";
+        errorBox.hidden = true;
+        errorBox.textContent = "";
+        const welcome = conversation.querySelector(".welcome");
+        if (welcome) welcome.remove();
+        addMessageRow("user", prompt);
+        const loading = addLoadingRow();
+
+        sendButton.disabled = true;
+        sendButton.classList.add("is-sending");
+        try {
+            const response = await fetch(composer.dataset.sendUrl, {
+                method: "POST",
+                body: formData,
+                headers: { "X-Requested-With": "XMLHttpRequest" }
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Не удалось получить ответ.");
+
+            loading.body.textContent = data.answer;
+            loading.row.classList.remove("loading-row");
+            const title = document.querySelector(".active-chat-title");
+            if (title && data.chat_title) title.textContent = data.chat_title;
+            const activeLink = document.querySelector(".chat-list-item.active .chat-list-title");
+            if (activeLink && data.chat_title) activeLink.textContent = data.chat_title;
+        } catch (error) {
+            loading.row.remove();
+            errorBox.textContent = error.message || "Ошибка при отправке сообщения.";
+            errorBox.hidden = false;
+        } finally {
+            sendButton.disabled = false;
+            sendButton.classList.remove("is-sending");
+            promptBox.focus();
+            scrollConversation();
+        }
+    });
 </script>
 {% endblock %}
